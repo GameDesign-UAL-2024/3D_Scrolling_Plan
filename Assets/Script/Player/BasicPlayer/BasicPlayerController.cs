@@ -70,8 +70,9 @@ public class BasicPlayerController : MonoBehaviour
         }
 
         // 6. 动画 Run 开关
-        bool isRunning = Mathf.Abs(currentVelocity) > 0.01f;
-        animator.SetBool("Run", isRunning);
+        animator.SetBool("Walk",isDiagonal);
+        bool isRunning = Mathf.Abs(currentVelocity) > 4f;
+        animator.SetBool("Run", isRunning && ! isDiagonal);
     }
 
     // 翻转物体朝向：Z 轴 scale 变 ±1

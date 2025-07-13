@@ -24,7 +24,7 @@ public partial class @PlayerControl: IInputActionCollection2, IDisposable
     ""name"": ""PlayerControl"",
     ""maps"": [
         {
-            ""name"": ""BasicPlayer"",
+            ""name"": ""Player"",
             ""id"": ""bf0358d0-d706-4470-9501-c19564e7c0ba"",
             ""actions"": [
                 {
@@ -352,14 +352,14 @@ public partial class @PlayerControl: IInputActionCollection2, IDisposable
     ],
     ""controlSchemes"": []
 }");
-        // BasicPlayer
-        m_BasicPlayer = asset.FindActionMap("BasicPlayer", throwIfNotFound: true);
-        m_BasicPlayer_Moving = m_BasicPlayer.FindAction("Moving", throwIfNotFound: true);
-        m_BasicPlayer_Jump = m_BasicPlayer.FindAction("Jump", throwIfNotFound: true);
-        m_BasicPlayer_BasicAttack = m_BasicPlayer.FindAction("BasicAttack", throwIfNotFound: true);
-        m_BasicPlayer_SpecialSkill = m_BasicPlayer.FindAction("SpecialSkill", throwIfNotFound: true);
-        m_BasicPlayer_Skill = m_BasicPlayer.FindAction("Skill", throwIfNotFound: true);
-        m_BasicPlayer_Commands = m_BasicPlayer.FindAction("Commands", throwIfNotFound: true);
+        // Player
+        m_Player = asset.FindActionMap("Player", throwIfNotFound: true);
+        m_Player_Moving = m_Player.FindAction("Moving", throwIfNotFound: true);
+        m_Player_Jump = m_Player.FindAction("Jump", throwIfNotFound: true);
+        m_Player_BasicAttack = m_Player.FindAction("BasicAttack", throwIfNotFound: true);
+        m_Player_SpecialSkill = m_Player.FindAction("SpecialSkill", throwIfNotFound: true);
+        m_Player_Skill = m_Player.FindAction("Skill", throwIfNotFound: true);
+        m_Player_Commands = m_Player.FindAction("Commands", throwIfNotFound: true);
     }
 
     public void Dispose()
@@ -418,34 +418,34 @@ public partial class @PlayerControl: IInputActionCollection2, IDisposable
         return asset.FindBinding(bindingMask, out action);
     }
 
-    // BasicPlayer
-    private readonly InputActionMap m_BasicPlayer;
-    private List<IBasicPlayerActions> m_BasicPlayerActionsCallbackInterfaces = new List<IBasicPlayerActions>();
-    private readonly InputAction m_BasicPlayer_Moving;
-    private readonly InputAction m_BasicPlayer_Jump;
-    private readonly InputAction m_BasicPlayer_BasicAttack;
-    private readonly InputAction m_BasicPlayer_SpecialSkill;
-    private readonly InputAction m_BasicPlayer_Skill;
-    private readonly InputAction m_BasicPlayer_Commands;
-    public struct BasicPlayerActions
+    // Player
+    private readonly InputActionMap m_Player;
+    private List<IPlayerActions> m_PlayerActionsCallbackInterfaces = new List<IPlayerActions>();
+    private readonly InputAction m_Player_Moving;
+    private readonly InputAction m_Player_Jump;
+    private readonly InputAction m_Player_BasicAttack;
+    private readonly InputAction m_Player_SpecialSkill;
+    private readonly InputAction m_Player_Skill;
+    private readonly InputAction m_Player_Commands;
+    public struct PlayerActions
     {
         private @PlayerControl m_Wrapper;
-        public BasicPlayerActions(@PlayerControl wrapper) { m_Wrapper = wrapper; }
-        public InputAction @Moving => m_Wrapper.m_BasicPlayer_Moving;
-        public InputAction @Jump => m_Wrapper.m_BasicPlayer_Jump;
-        public InputAction @BasicAttack => m_Wrapper.m_BasicPlayer_BasicAttack;
-        public InputAction @SpecialSkill => m_Wrapper.m_BasicPlayer_SpecialSkill;
-        public InputAction @Skill => m_Wrapper.m_BasicPlayer_Skill;
-        public InputAction @Commands => m_Wrapper.m_BasicPlayer_Commands;
-        public InputActionMap Get() { return m_Wrapper.m_BasicPlayer; }
+        public PlayerActions(@PlayerControl wrapper) { m_Wrapper = wrapper; }
+        public InputAction @Moving => m_Wrapper.m_Player_Moving;
+        public InputAction @Jump => m_Wrapper.m_Player_Jump;
+        public InputAction @BasicAttack => m_Wrapper.m_Player_BasicAttack;
+        public InputAction @SpecialSkill => m_Wrapper.m_Player_SpecialSkill;
+        public InputAction @Skill => m_Wrapper.m_Player_Skill;
+        public InputAction @Commands => m_Wrapper.m_Player_Commands;
+        public InputActionMap Get() { return m_Wrapper.m_Player; }
         public void Enable() { Get().Enable(); }
         public void Disable() { Get().Disable(); }
         public bool enabled => Get().enabled;
-        public static implicit operator InputActionMap(BasicPlayerActions set) { return set.Get(); }
-        public void AddCallbacks(IBasicPlayerActions instance)
+        public static implicit operator InputActionMap(PlayerActions set) { return set.Get(); }
+        public void AddCallbacks(IPlayerActions instance)
         {
-            if (instance == null || m_Wrapper.m_BasicPlayerActionsCallbackInterfaces.Contains(instance)) return;
-            m_Wrapper.m_BasicPlayerActionsCallbackInterfaces.Add(instance);
+            if (instance == null || m_Wrapper.m_PlayerActionsCallbackInterfaces.Contains(instance)) return;
+            m_Wrapper.m_PlayerActionsCallbackInterfaces.Add(instance);
             @Moving.started += instance.OnMoving;
             @Moving.performed += instance.OnMoving;
             @Moving.canceled += instance.OnMoving;
@@ -466,7 +466,7 @@ public partial class @PlayerControl: IInputActionCollection2, IDisposable
             @Commands.canceled += instance.OnCommands;
         }
 
-        private void UnregisterCallbacks(IBasicPlayerActions instance)
+        private void UnregisterCallbacks(IPlayerActions instance)
         {
             @Moving.started -= instance.OnMoving;
             @Moving.performed -= instance.OnMoving;
@@ -488,22 +488,22 @@ public partial class @PlayerControl: IInputActionCollection2, IDisposable
             @Commands.canceled -= instance.OnCommands;
         }
 
-        public void RemoveCallbacks(IBasicPlayerActions instance)
+        public void RemoveCallbacks(IPlayerActions instance)
         {
-            if (m_Wrapper.m_BasicPlayerActionsCallbackInterfaces.Remove(instance))
+            if (m_Wrapper.m_PlayerActionsCallbackInterfaces.Remove(instance))
                 UnregisterCallbacks(instance);
         }
 
-        public void SetCallbacks(IBasicPlayerActions instance)
+        public void SetCallbacks(IPlayerActions instance)
         {
-            foreach (var item in m_Wrapper.m_BasicPlayerActionsCallbackInterfaces)
+            foreach (var item in m_Wrapper.m_PlayerActionsCallbackInterfaces)
                 UnregisterCallbacks(item);
-            m_Wrapper.m_BasicPlayerActionsCallbackInterfaces.Clear();
+            m_Wrapper.m_PlayerActionsCallbackInterfaces.Clear();
             AddCallbacks(instance);
         }
     }
-    public BasicPlayerActions @BasicPlayer => new BasicPlayerActions(this);
-    public interface IBasicPlayerActions
+    public PlayerActions @Player => new PlayerActions(this);
+    public interface IPlayerActions
     {
         void OnMoving(InputAction.CallbackContext context);
         void OnJump(InputAction.CallbackContext context);

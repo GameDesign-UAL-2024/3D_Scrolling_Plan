@@ -1,0 +1,30 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bbb281ee3bf0b054c82ac2347e9e782c, type: 3}
+  m_Name: System
+  m_EditorClassIdentifier: 
+  m_GroupName: System
+  m_Data:
+    m_SerializedData: []
+  m_GUID: 3b0fda8cb546a8d49bf449a5627632eb
+  m_SerializeEntries:
+  - m_GUID: 633ce3d82d7ceea4b99a5116dd4a8f37
+    m_Address: Assets/Resoruces/Prefabs/KeyIcons.prefab
+    m_ReadOnly: 0
+    m_SerializedLabels: []
+    FlaggedDuringContentUpdateRestriction: 0
+  m_ReadOnly: 0
+  m_Settings: {fileID: 11400000, guid: 86886bcf81604fd48b64a107e78c9662, type: 2}
+  m_SchemaSet:
+    m_Schemas:
+    - {fileID: 11400000, guid: 788bc74e82fea5b4e91ae5af5cc36441, type: 2}
+    - {fileID: 11400000, guid: 2e95db918cb42024e972a609e71701c5, type: 2}

@@ -29,14 +29,20 @@ public class PlayerInputs : MonoBehaviour
     public static event UnityAction OnJumpPressed;
     public static event UnityAction OnJumpReleased;
 
-    // 添加设备切换事件
+    // 设备切换事件
     public static event UnityAction<InputDeviceType> OnInputDeviceChanged;
     TestCanvas canvas;
+    
+    // 输入锁定
+    private bool inputLocked = false;
+    private float inputLockThreshold = 0.1f; // 当moveInput小于这个值时触发锁定机制
+    private Vector2 pendingRawInput = Vector2.zero; // 暂存待处理的输入
+    
     void Awake()
     {
         controls = new PlayerControl();
         controls.Player.Moving.performed += OnMoving;
-        controls.Player.Moving.canceled += OnMoving;
+        controls.Player.Moving.canceled += OnMovingCancel;
         controls.Player.Jump.performed += OnJumpPerformed;
         controls.Player.Jump.canceled += OnJumpCanceled;
         controls.Player.BasicAttack.performed += OnAttack;
@@ -136,14 +142,31 @@ public class PlayerInputs : MonoBehaviour
     
     public void OnMoving(InputAction.CallbackContext context)
     {
-        rawMoveInput = context.ReadValue<Vector2>(); // 存储原始输入
-        moveInput = context.ReadValue<Vector2>(); // 初始值设为原始输入
+        Vector2 newRawInput = context.ReadValue<Vector2>();
+        
+        // 如果输入被锁定，暂存输入值
+        if (inputLocked)
+        {
+            pendingRawInput = newRawInput;
+            return;
+        }
+        
+        // 正常处理输入
+        rawMoveInput = newRawInput;
+        moveInput = newRawInput; // 初始值设为原始输入
     }
 
     public void OnMovingCancel(InputAction.CallbackContext context)
     {
+        // 如果当前moveInput值较小，激活输入锁定
+        if (moveInput.magnitude <= inputLockThreshold)
+        {
+            inputLocked = true;
+            Debug.Log("输入锁定激活 - moveInput magnitude: " + moveInput.magnitude);
+        }
+        
         rawMoveInput = Vector2.zero;
-        moveInput = Vector2.zero;
+        pendingRawInput = Vector2.zero;
     }
 
     private void OnJumpPerformed(InputAction.CallbackContext context)
@@ -170,6 +193,23 @@ public class PlayerInputs : MonoBehaviour
             // 手柄直接使用原始输入（手柄自带摇杆平滑）
             moveInput = rawMoveInput;
         }
+        
+        // 检查是否需要解锁输入
+        if (inputLocked && moveInput.magnitude <= 0.01f) // 当moveInput基本归零时
+        {
+            inputLocked = false;
+            Debug.Log("输入锁定解除");
+            
+            // 如果有待处理的输入，立即应用
+            if (pendingRawInput.magnitude > 0.01f)
+            {
+                rawMoveInput = pendingRawInput;
+                moveInput = pendingRawInput;
+                pendingRawInput = Vector2.zero;
+                Debug.Log("应用待处理的输入: " + rawMoveInput);
+            }
+        }
+        
         while (_instructionCache.Count > 0 && _instructionCache.Peek().IsExpired)
         {
             _instructionCache.Dequeue();

@@ -274,8 +274,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 25f991536ef9b994297ceb31cd2570ce, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  character_object: {fileID: 919132148982420253}
   currentInputDevice: 0
+  character_object: {fileID: 919132148982420253}
 --- !u!4 &205529269
 Transform:
   m_ObjectHideFlags: 0
@@ -4068,7 +4068,7 @@ MonoBehaviour:
   midSpeed: 2
   maxSpeed: 3.5
   target_speed: 3
-  Locking: 0
+  Locking: 1
   jump_force: 4
   jumpBufferTime: 0.1
   maxJumpTime: 0.4

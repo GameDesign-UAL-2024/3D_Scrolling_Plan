@@ -1,308 +1,374 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
+using UnityEngine.AddressableAssets;
 using UnityEngine.Events;
 using UnityEngine.InputSystem;
-using UnityEngine.AddressableAssets;
-using UnityEngine.Rendering;
 
-public class PlayerInputs : MonoBehaviour
+namespace Script.Player
 {
-    public static PlayerInputs Instance { get; private set; }
-    private PlayerControl controls;
-    [SerializeField] GameObject character_object;
-    public Vector2 moveInput { get; private set; }
-    public Vector2 rawMoveInput { get; private set; } // 添加原始输入值
-    public enum  InstructionKeys{ UP, DOWN, LEFT, RIGHT, ATTACK, SKILL };
-    Dictionary<float, InstructionKeys> Instructions;
-
-    private string KeyIconPrefab = "Assets/Resoruces/Prefabs/KeyIcons.prefab";
-    GameObject KeyIcon;
-    public enum InputDeviceType
+    public class PlayerInputs : MonoBehaviour
     {
-        KeyboardMouse,
-        Gamepad
-    }
-    public InputDeviceType currentInputDevice = InputDeviceType.KeyboardMouse;
-    public static event UnityAction OnJumpPressed;
-    public static event UnityAction OnJumpReleased;
+        public static PlayerInputs Instance { get; private set; }
+        private PlayerControl controls;
+        
+        public Vector2 moveInput { get; private set; }
+        public Vector2 rawMoveInput { get; private set; } // 添加原始输入值
+        public enum  InstructionKeys{ UP, DOWN, LEFT, RIGHT, ATTACK, SKILL };
+        Dictionary<float, InstructionKeys> Instructions;
 
-    // 设备切换事件
-    public static event UnityAction<InputDeviceType> OnInputDeviceChanged;
-    TestCanvas canvas;
+        private string KeyIconPrefab = "Assets/Resoruces/Prefabs/KeyIcons.prefab";
+        GameObject KeyIcon;
+        public enum InputDeviceType
+        {
+            KeyboardMouse,
+            Gamepad
+        }
+        public InputDeviceType currentInputDevice = InputDeviceType.KeyboardMouse;
+        public static event UnityAction OnJumpPressed;
+        public static event UnityAction OnJumpReleased;
+
+        // 设备切换事件
+        public static event UnityAction<InputDeviceType> OnInputDeviceChanged;
+        TestCanvas canvas;
     
-    // 输入锁定
-    private bool inputLocked = false;
-    private float inputLockThreshold = 0.1f; // 当moveInput小于这个值时触发锁定机制
-    private Vector2 pendingRawInput = Vector2.zero; // 暂存待处理的输入
+        // 输入锁定
+        private bool inputLocked = false;
+        private float inputLockThreshold = 0.1f; // 当moveInput小于这个值时触发锁定机制
+        private Vector2 pendingRawInput = Vector2.zero; // 暂存待处理的输入
+        
+        [SerializeField] GameObject character_object;
+        private PlayerObject character_component;
+        private bool locked;
+        private int lastDirection;
+        void Awake()
+        {
+            controls = new PlayerControl();
+            controls.Player.Moving.performed += OnMoving;
+            controls.Player.Moving.canceled += OnMovingCancel;
+            controls.Player.Jump.performed += OnJumpPerformed;
+            controls.Player.Jump.canceled += OnJumpCanceled;
+            controls.Player.BasicAttack.performed += OnAttack;
+            controls.Player.SpecialSkill.performed += OnSpecialSkill;
+            controls.Player.Skill.performed += OnSkill;
+            controls.Player.Commands.performed += OnCommandPerformed;
+            Application.targetFrameRate = 60;
+            if (Instance != null)
+            {
+                Destroy(this);
+            }
+            else
+            {
+                Instance = this;
+            }
+        }
+
+        void Start()
+        {
+            DetectInputDevice();
+            // 监听设备变化
+            InputSystem.onDeviceChange += OnDeviceChange;
+            if (character_object != null)
+            {
+                character_component = character_object.GetComponent<PlayerObject>();
+            }
+            KeyIcon = Addressables.LoadAsset<GameObject>(KeyIconPrefab).WaitForCompletion();
+            GameObject canvas_obj = GameObject.FindGameObjectWithTag("Canvas");
+            if (canvas_obj != null)
+            {
+                canvas = canvas_obj.GetComponent<TestCanvas>();
+            }
+            print($"{character_object}{character_component}");
+        }
     
-    void Awake()
-    {
-        controls = new PlayerControl();
-        controls.Player.Moving.performed += OnMoving;
-        controls.Player.Moving.canceled += OnMovingCancel;
-        controls.Player.Jump.performed += OnJumpPerformed;
-        controls.Player.Jump.canceled += OnJumpCanceled;
-        controls.Player.BasicAttack.performed += OnAttack;
-        controls.Player.SpecialSkill.performed += OnSpecialSkill;
-        controls.Player.Skill.performed += OnSkill;
-        Application.targetFrameRate = 60;
-        if (Instance != null)
+        void Update()
         {
-            Destroy(this);
-        }
-        else
-        {
-            Instance = this;
-        }
-    }
+            // 添加输入平滑处理
+            if (currentInputDevice == InputDeviceType.KeyboardMouse)
+            {
+                // 键盘鼠标使用平滑过渡
+                moveInput = Vector2.Lerp(moveInput, rawMoveInput, 0.1f);
+                moveInput = new Vector2(FixFloat(moveInput.x), FixFloat(moveInput.y));
+            }
+            else
+            {
+                // 手柄直接使用原始输入（手柄自带摇杆平滑）
+                moveInput = rawMoveInput;
+            }
+        
+            // 检查是否需要解锁输入
+            if (inputLocked && moveInput.magnitude <= 0.01f) // 当moveInput基本归零时
+            {
+                inputLocked = false;
+                Debug.Log("输入锁定解除");
+            
+                // 如果有待处理的输入，立即应用
+                if (pendingRawInput.magnitude > 0.01f)
+                {
+                    rawMoveInput = pendingRawInput;
+                    moveInput = pendingRawInput;
+                    pendingRawInput = Vector2.zero;
+                }
+            }
+        
+            while (_instructionCache.Count > 0 && _instructionCache.Peek().IsExpired)
+            {
+                _instructionCache.Dequeue();
+            }
 
-    void Start()
-    {
-        DetectInputDevice();
-        // 监听设备变化
-        InputSystem.onDeviceChange += OnDeviceChange;
-
-        KeyIcon = Addressables.LoadAsset<GameObject>(KeyIconPrefab).WaitForCompletion();
-        GameObject canvas_obj = GameObject.FindGameObjectWithTag("Canvas");
-        if (canvas_obj != null)
-        {
-            canvas = canvas_obj.GetComponent<TestCanvas>();
+            if (character_component)
+            {
+                lastDirection = character_component.GetLastDirection();
+                locked = character_component.GetLocked();
+            }
         }
-    }
-
      
-    void OnDeviceChange(InputDevice device, InputDeviceChange change)
-    {
-        // 设备变化时立即检测当前设备
-        DetectInputDevice();
-    }
+        void OnDeviceChange(InputDevice device, InputDeviceChange change)
+        {
+            // 设备变化时立即检测当前设备
+            DetectInputDevice();
+        }
 
-    void OnEnable() => controls.Enable();
-    void OnDisable() => controls.Disable();
+        void OnEnable() => controls.Enable();
+        void OnDisable() => controls.Disable();
     
-    private Queue<TimedInstruction> _instructionCache = new Queue<TimedInstruction>(7);
-    public Coroutine InstructionCacheRefreshCoroutine;
+        private Queue<TimedInstruction> _instructionCache = new Queue<TimedInstruction>(7);
+        public Coroutine InstructionCacheRefreshCoroutine;
     
-    public void OnAttack(InputAction.CallbackContext context)
-    {
-        AddInstructionToCanvas(InstructionKeys.ATTACK);
-        _instructionCache.Enqueue(new TimedInstruction(InstructionKeys.ATTACK));
-    }
+        public void OnAttack(InputAction.CallbackContext context)
+        {
+            if (locked)
+            {
+                AddInstructionToCanvas(InstructionKeys.ATTACK);
+                _instructionCache.Enqueue(new TimedInstruction(InstructionKeys.ATTACK));
+            }
+        }
    
-    public bool specialSkill { get; private set; }
-    private Coroutine specialSkillCoroutine;
-    public void OnSpecialSkill(InputAction.CallbackContext context)
-    {
-        if (specialSkillCoroutine != null)
+        public bool specialSkill { get; private set; }
+        private Coroutine specialSkillCoroutine;
+        public void OnSpecialSkill(InputAction.CallbackContext context)
         {
-            StopCoroutine(specialSkillCoroutine);
+            if (specialSkillCoroutine != null)
+            {
+                StopCoroutine(specialSkillCoroutine);
+            }
+            specialSkillCoroutine = StartCoroutine(SpecialSkillCoroutine());
         }
-        specialSkillCoroutine = StartCoroutine(SpecialSkillCoroutine());
-    }
-    private IEnumerator SpecialSkillCoroutine()
-    {
-        specialSkill = true;
-        int frame_wait = 0;
-        while (frame_wait < 5)
+        private IEnumerator SpecialSkillCoroutine()
         {
-            frame_wait += 1;
-            yield return new WaitForEndOfFrame();
-        }
+            specialSkill = true;
+            int frame_wait = 0;
+            while (frame_wait < 5)
+            {
+                frame_wait += 1;
+                yield return new WaitForEndOfFrame();
+            }
 
-        specialSkill = false;
-    }
+            specialSkill = false;
+        }
     
-    public bool skill {  get; private set; }
-    private Coroutine skillCoroutine;
-    public void OnSkill(InputAction.CallbackContext context)
-    {
-        _instructionCache.Enqueue(new TimedInstruction(InstructionKeys.SKILL));
-        if (skillCoroutine != null)
+        public bool skill {  get; private set; }
+        private Coroutine skillCoroutine;
+        public void OnSkill(InputAction.CallbackContext context)
         {
-            StopCoroutine(skillCoroutine);
+            if (skillCoroutine != null)
+            {
+                StopCoroutine(skillCoroutine);
+            }
+            skillCoroutine = StartCoroutine(SkillCoroutine());
+            if (locked)
+            {
+                AddInstructionToCanvas(InstructionKeys.SKILL);
+                _instructionCache.Enqueue(new TimedInstruction(InstructionKeys.SKILL));
+            }
         }
-        skillCoroutine = StartCoroutine(SkillCoroutine());
-    }
 
-    private IEnumerator SkillCoroutine()
-    {
-        skill = true;
-        int frame_wait = 0;
-        while (frame_wait < 5)
+        private IEnumerator SkillCoroutine()
         {
-            frame_wait += 1;
-            yield return new WaitForEndOfFrame();
+            skill = true;
+            int frame_wait = 0;
+            while (frame_wait < 5)
+            {
+                frame_wait += 1;
+                yield return new WaitForEndOfFrame();
+            }
+            skill = false;        
         }
-        skill = false;        
-    }
     
     
-    public void OnMoving(InputAction.CallbackContext context)
-    {
-        Vector2 newRawInput = context.ReadValue<Vector2>();
+        public void OnMoving(InputAction.CallbackContext context)
+        {
+            Vector2 newRawInput = context.ReadValue<Vector2>();
         
-        // 如果输入被锁定，暂存输入值
-        if (inputLocked)
-        {
-            pendingRawInput = newRawInput;
-            return;
-        }
+            // 如果输入被锁定，暂存输入值
+            if (inputLocked)
+            {
+                pendingRawInput = newRawInput;
+                return;
+            }
         
-        // 正常处理输入
-        rawMoveInput = newRawInput;
-        moveInput = newRawInput; // 初始值设为原始输入
-    }
-
-    public void OnMovingCancel(InputAction.CallbackContext context)
-    {
-        // 如果当前moveInput值较小，激活输入锁定
-        if (moveInput.magnitude <= inputLockThreshold)
-        {
-            inputLocked = true;
-            Debug.Log("输入锁定激活 - moveInput magnitude: " + moveInput.magnitude);
+            // 正常处理输入
+            rawMoveInput = newRawInput;
+            moveInput = newRawInput; // 初始值设为原始输入
         }
+
+        public void OnMovingCancel(InputAction.CallbackContext context)
+        {
+            // 如果当前moveInput值较小，激活输入锁定
+            if (moveInput.magnitude <= inputLockThreshold)
+            {
+                inputLocked = true;
+            }
         
-        rawMoveInput = Vector2.zero;
-        pendingRawInput = Vector2.zero;
-    }
-
-    private void OnJumpPerformed(InputAction.CallbackContext context)
-    {
-        OnJumpPressed?.Invoke(); // 触发跳跃按下事件
-    }
-
-    private void OnJumpCanceled(InputAction.CallbackContext context)
-    {
-        OnJumpReleased?.Invoke(); // 触发跳跃释放事件
-    }
-
-    void Update()
-    {
-        // 添加输入平滑处理
-        if (currentInputDevice == InputDeviceType.KeyboardMouse)
-        {
-            // 键盘鼠标使用平滑过渡
-            moveInput = Vector2.Lerp(moveInput, rawMoveInput, 0.1f);
-            moveInput = new Vector2(FixFloat(moveInput.x), FixFloat(moveInput.y));
+            rawMoveInput = Vector2.zero;
+            pendingRawInput = Vector2.zero;
         }
-        else
+
+        private void OnJumpPerformed(InputAction.CallbackContext context)
         {
-            // 手柄直接使用原始输入（手柄自带摇杆平滑）
-            moveInput = rawMoveInput;
+            OnJumpPressed?.Invoke(); // 触发跳跃按下事件
         }
-        
-        // 检查是否需要解锁输入
-        if (inputLocked && moveInput.magnitude <= 0.01f) // 当moveInput基本归零时
+
+        private void OnJumpCanceled(InputAction.CallbackContext context)
         {
-            inputLocked = false;
-            Debug.Log("输入锁定解除");
+            OnJumpReleased?.Invoke(); // 触发跳跃释放事件
+        }
+
+        private void OnCommandPerformed(InputAction.CallbackContext context)
+        {
+            if (! locked) return;
+            Vector2 input = context.ReadValue<Vector2>();
+            InstructionKeys? instruction = null;
+            if (input.x > 0)
+            {
+                instruction = lastDirection > 0? InstructionKeys.RIGHT : InstructionKeys.LEFT;
+            }
+            else if (input.x < 0)
+            {
+                instruction = lastDirection > 0? InstructionKeys.LEFT : InstructionKeys.RIGHT;
+            }
+
+            if (input.y < 0)
+            {
+                instruction = InstructionKeys.DOWN;
+            }
+            else if (input.y < 0)
+            {
+                instruction = InstructionKeys.UP;
+            }
+
+            if (instruction.HasValue)
+            {
+                _instructionCache.Enqueue(new TimedInstruction(instruction.Value));
+                AddInstructionToCanvas(instruction.Value);
+            }
             
-            // 如果有待处理的输入，立即应用
-            if (pendingRawInput.magnitude > 0.01f)
+        }
+
+
+        void DetectInputDevice()
+        {
+            // 检测手柄输入
+            if (Gamepad.current != null && Gamepad.current.wasUpdatedThisFrame)
             {
-                rawMoveInput = pendingRawInput;
-                moveInput = pendingRawInput;
-                pendingRawInput = Vector2.zero;
-                Debug.Log("应用待处理的输入: " + rawMoveInput);
+                if (IsGamepadActive() && currentInputDevice != InputDeviceType.Gamepad)
+                {
+                    SetInputDevice(InputDeviceType.Gamepad);
+                }
+            }
+
+            // 检测键盘鼠标输入
+            if ((Keyboard.current != null && Keyboard.current.anyKey.wasPressedThisFrame) ||
+                (Mouse.current != null && Mouse.current.delta.ReadValue() != Vector2.zero))
+            {
+                if (currentInputDevice != InputDeviceType.KeyboardMouse)
+                {
+                    SetInputDevice(InputDeviceType.KeyboardMouse);
+                }
             }
         }
-        
-        while (_instructionCache.Count > 0 && _instructionCache.Peek().IsExpired)
+        public static float FixFloat(float value)
         {
-            _instructionCache.Dequeue();
-        }
-    }
+            // 确保是有效数字
+            if (float.IsNaN(value) || float.IsInfinity(value))
+                return 0f;
 
-    void DetectInputDevice()
-    {
-        // 检测手柄输入
-        if (Gamepad.current != null && Gamepad.current.wasUpdatedThisFrame)
+            // 四舍五入到4位小数
+            return (float)System.Math.Round(value, 4);
+        }
+        void SetInputDevice(InputDeviceType deviceType)
         {
-            if (IsGamepadActive() && currentInputDevice != InputDeviceType.Gamepad)
+            if (currentInputDevice != deviceType)
             {
-                SetInputDevice(InputDeviceType.Gamepad);
+                currentInputDevice = deviceType;
+                OnInputDeviceChanged?.Invoke(deviceType);
+                Debug.Log($"输入设备切换到: {deviceType}");
             }
         }
 
-        // 检测键盘鼠标输入
-        if ((Keyboard.current != null && Keyboard.current.anyKey.wasPressedThisFrame) ||
-            (Mouse.current != null && Mouse.current.delta.ReadValue() != Vector2.zero))
+        bool IsGamepadActive()
         {
-            if (currentInputDevice != InputDeviceType.KeyboardMouse)
+            var gamepad = Gamepad.current;
+            return gamepad.leftStick.ReadValue().magnitude > 0.1f ||
+                   gamepad.rightStick.ReadValue().magnitude > 0.1f ||
+                   gamepad.buttonSouth.wasPressedThisFrame ||
+                   gamepad.buttonEast.wasPressedThisFrame ||
+                   gamepad.buttonWest.wasPressedThisFrame ||
+                   gamepad.buttonNorth.wasPressedThisFrame;
+        }
+
+        void AddInstructionToCanvas(InstructionKeys instruction)
+        {
+            if (canvas != null)
             {
-                SetInputDevice(InputDeviceType.KeyboardMouse);
-            }
-        }
-    }
-    public static float FixFloat(float value)
-    {
-        // 确保是有效数字
-        if (float.IsNaN(value) || float.IsInfinity(value))
-            return 0f;
-
-        // 四舍五入到4位小数
-        return (float)System.Math.Round(value, 4);
-    }
-    void SetInputDevice(InputDeviceType deviceType)
-    {
-        if (currentInputDevice != deviceType)
-        {
-            currentInputDevice = deviceType;
-            OnInputDeviceChanged?.Invoke(deviceType);
-            Debug.Log($"输入设备切换到: {deviceType}");
-        }
-    }
-
-    bool IsGamepadActive()
-    {
-        var gamepad = Gamepad.current;
-        return gamepad.leftStick.ReadValue().magnitude > 0.1f ||
-               gamepad.rightStick.ReadValue().magnitude > 0.1f ||
-               gamepad.buttonSouth.wasPressedThisFrame ||
-               gamepad.buttonEast.wasPressedThisFrame ||
-               gamepad.buttonWest.wasPressedThisFrame ||
-               gamepad.buttonNorth.wasPressedThisFrame;
-    }
-
-    void AddInstructionToCanvas(InstructionKeys instruction)
-    {
-        if (canvas != null)
-        {
-            GameObject instructionNode = Instantiate(KeyIcon);
+                GameObject instructionNode = Instantiate(KeyIcon);
             
-            instructionNode.GetComponent<KeyIcons>().key_text.text = instruction.ToString();
-            canvas.AddInstructionNode(instructionNode);
+                instructionNode.GetComponent<KeyIcons>().key_text.text = instruction.ToString();
+                canvas.AddInstructionNode(instructionNode);
+            }
         }
-    }
-    public class TimedInstruction
-    {
-        public InstructionKeys Key { get; }
-        public int CreationFrame { get; }
-    
-        public TimedInstruction(InstructionKeys key)
+
+        public bool ChangeCharacter(GameObject character)
         {
-            Key = key;
-            CreationFrame = Time.frameCount;
+            if (character.TryGetComponent<PlayerObject>(out PlayerObject _character_comp))
+            {
+                character_object = character;
+                character_component = _character_comp;
+                return true;
+            }
+            else
+            {
+                return false;
+            }
         }
+        public class TimedInstruction
+        {
+            public InstructionKeys Key { get; }
+            public int CreationFrame { get; }
     
-        public bool IsExpired => Time.frameCount - CreationFrame >= 15;
+            public TimedInstruction(InstructionKeys key)
+            {
+                Key = key;
+                CreationFrame = Time.frameCount;
+            }
+    
+            public bool IsExpired => Time.frameCount - CreationFrame >= 15;
+        }
     }
-}
 
 
-[Serializable]
-public class InstructionSets
-{
-    [Tooltip("指令序列(最多7个)")]
-    public PlayerInputs.InstructionKeys[] sequence = new PlayerInputs.InstructionKeys[0]; // 初始化为空数组
+    [Serializable]
+    public class InstructionSets
+    {
+        [Tooltip("指令序列(最多7个)")]
+        public PlayerInputs.InstructionKeys[] sequence = new PlayerInputs.InstructionKeys[0]; // 初始化为空数组
 
-    [Tooltip("允许的最大输入间隔时间（秒）")]
-    [Range(0.1f, 2f)]
-    public float maxInterval = 0.5f;
+        [Tooltip("允许的最大输入间隔时间（秒）")]
+        [Range(0.1f, 2f)]
+        public float maxInterval = 0.5f;
 
-    [Tooltip("指令描述（可选）")]
-    public string description = "New Command";
+        [Tooltip("指令描述（可选）")]
+        public string description = "New Command";
+    }
 }

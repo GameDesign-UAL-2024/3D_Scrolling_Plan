@@ -276,6 +276,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   currentInputDevice: 0
   character_object: {fileID: 919132148982420253}
+  joystickDeadZone: 0.5
+  commandCooldown: 0.2
 --- !u!4 &205529269
 Transform:
   m_ObjectHideFlags: 0
@@ -1256,18 +1258,18 @@ Canvas:
   m_GameObject: {fileID: 619990425}
   m_Enabled: 1
   serializedVersion: 3
-  m_RenderMode: 1
+  m_RenderMode: 0
   m_Camera: {fileID: 647832401}
   m_PlaneDistance: 100
-  m_PixelPerfect: 0
+  m_PixelPerfect: 1
   m_ReceivesEvents: 1
   m_OverrideSorting: 0
   m_OverridePixelPerfect: 0
   m_SortingBucketNormalizedSize: 0
   m_VertexColorAlwaysGammaSpace: 0
-  m_AdditionalShaderChannelsFlag: 25
+  m_AdditionalShaderChannelsFlag: -1
   m_UpdateRectTransformForStandalone: 0
-  m_SortingLayerID: 0
+  m_SortingLayerID: -709784053
   m_SortingOrder: 0
   m_TargetDisplay: 0
 --- !u!224 &619990429
@@ -4137,7 +4139,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   isActive: 1
   _InstructionSet:
-  - sequence: 020000000300000004000000
+  - sequence: 020000000600000001000000070000000300000008000000
     maxInterval: 0.2
     description: "\u9F99\u817E\u8E22"
 --- !u!1660057539 &9223372036854775807

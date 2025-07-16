@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 
 namespace Script.Player.BasicPlayer
@@ -41,14 +42,20 @@ namespace Script.Player.BasicPlayer
         Vector2 input = Vector2.zero;
         private Animator animator;
         [SerializeField] private float inputSmoothTime = 0.1f; // 输入平滑时间
-
+        private CommandConfig instructionConfig;
         private void Awake()
         {
             animator = GetComponent<Animator>();
             PlayerInputs.OnJumpPressed += JumpStart;
             PlayerInputs.OnJumpReleased += JumpEnd;
+            PlayerInputs.OnInstructionCacheRefresh += CheckCommands;
         }
 
+        private void Start()
+        {
+            instructionConfig = GetComponentInChildren<CommandConfig>();
+        }
+        
         private void FixedUpdate()
         {
             // 1. 读取输入（统一平滑处理）
@@ -263,6 +270,13 @@ namespace Script.Player.BasicPlayer
             }
         }
 
+        void CheckCommands()
+        {
+            if (instructionConfig)
+            {
+                PlayerInputs.Instance.CheckInstructions(instructionConfig.InstructionSet);
+            }
+        }
         public override int GetLastDirection()
         {
             return lastDirection;

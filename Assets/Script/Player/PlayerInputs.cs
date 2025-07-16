@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.AddressableAssets;
 using UnityEngine.Events;
@@ -14,8 +15,8 @@ namespace Script.Player
         private PlayerControl controls;
         
         public Vector2 moveInput { get; private set; }
-        public Vector2 rawMoveInput { get; private set; } // 添加原始输入值
-        public enum  InstructionKeys{ UP, DOWN, LEFT, RIGHT, ATTACK, SKILL };
+        public Vector2 rawMoveInput { get; private set; }
+        public enum InstructionKeys { UP, DOWN, LEFT, RIGHT, UPL, UPR, DOWNL, DOWNR, ATTACK, SKILL };
         Dictionary<float, InstructionKeys> Instructions;
 
         private string KeyIconPrefab = "Assets/Resoruces/Prefabs/KeyIcons.prefab";
@@ -29,19 +30,18 @@ namespace Script.Player
         public static event UnityAction OnJumpPressed;
         public static event UnityAction OnJumpReleased;
 
-        // 设备切换事件
         public static event UnityAction<InputDeviceType> OnInputDeviceChanged;
         TestCanvas canvas;
     
-        // 输入锁定
         private bool inputLocked = false;
-        private float inputLockThreshold = 0.1f; // 当moveInput小于这个值时触发锁定机制
-        private Vector2 pendingRawInput = Vector2.zero; // 暂存待处理的输入
+        private float inputLockThreshold = 0.1f;
+        private Vector2 pendingRawInput = Vector2.zero;
         
         [SerializeField] GameObject character_object;
         private PlayerObject character_component;
         private bool locked;
         private int lastDirection;
+        
         void Awake()
         {
             controls = new PlayerControl();
@@ -53,57 +53,48 @@ namespace Script.Player
             controls.Player.SpecialSkill.performed += OnSpecialSkill;
             controls.Player.Skill.performed += OnSkill;
             controls.Player.Commands.performed += OnCommandPerformed;
+            controls.Player.Commands.canceled += OnCommandCancel;
             Application.targetFrameRate = 60;
-            if (Instance != null)
-            {
-                Destroy(this);
-            }
-            else
-            {
-                Instance = this;
-            }
+            
+            if (Instance != null) Destroy(this);
+            else Instance = this;
         }
 
         void Start()
         {
             DetectInputDevice();
-            // 监听设备变化
             InputSystem.onDeviceChange += OnDeviceChange;
+            
             if (character_object != null)
             {
                 character_component = character_object.GetComponent<PlayerObject>();
             }
+            
             KeyIcon = Addressables.LoadAsset<GameObject>(KeyIconPrefab).WaitForCompletion();
             GameObject canvas_obj = GameObject.FindGameObjectWithTag("Canvas");
             if (canvas_obj != null)
             {
                 canvas = canvas_obj.GetComponent<TestCanvas>();
             }
-            print($"{character_object}{character_component}");
         }
     
         void Update()
         {
-            // 添加输入平滑处理
+            DetectInputDevice();
+    
             if (currentInputDevice == InputDeviceType.KeyboardMouse)
             {
-                // 键盘鼠标使用平滑过渡
                 moveInput = Vector2.Lerp(moveInput, rawMoveInput, 0.1f);
                 moveInput = new Vector2(FixFloat(moveInput.x), FixFloat(moveInput.y));
             }
             else
             {
-                // 手柄直接使用原始输入（手柄自带摇杆平滑）
                 moveInput = rawMoveInput;
             }
-        
-            // 检查是否需要解锁输入
-            if (inputLocked && moveInput.magnitude <= 0.01f) // 当moveInput基本归零时
+
+            if (inputLocked && moveInput.magnitude <= 0.01f)
             {
                 inputLocked = false;
-                Debug.Log("输入锁定解除");
-            
-                // 如果有待处理的输入，立即应用
                 if (pendingRawInput.magnitude > 0.01f)
                 {
                     rawMoveInput = pendingRawInput;
@@ -111,11 +102,8 @@ namespace Script.Player
                     pendingRawInput = Vector2.zero;
                 }
             }
-        
-            while (_instructionCache.Count > 0 && _instructionCache.Peek().IsExpired)
-            {
-                _instructionCache.Dequeue();
-            }
+
+            CleanExpiredInstructions();
 
             if (character_component)
             {
@@ -123,25 +111,90 @@ namespace Script.Player
                 locked = character_component.GetLocked();
             }
         }
-     
+
         void OnDeviceChange(InputDevice device, InputDeviceChange change)
         {
-            // 设备变化时立即检测当前设备
             DetectInputDevice();
         }
 
         void OnEnable() => controls.Enable();
         void OnDisable() => controls.Disable();
     
-        private Queue<TimedInstruction> _instructionCache = new Queue<TimedInstruction>(7);
+        public Queue<TimedInstruction> instructionCache = new Queue<TimedInstruction>(7);
         public Coroutine InstructionCacheRefreshCoroutine;
+        public static event UnityAction OnInstructionCacheRefresh;
+        
+        public string[] CheckInstructions(InstructionSets[] instructions)
+        {
+            string[] results = new string[instructions.Length];
     
+            if (instructionCache.Count == 0) return results;
+    
+            TimedInstruction[] cacheArray = instructionCache.ToArray();
+            int cacheCount = cacheArray.Length;
+    
+            InstructionKeys[] keyArray = new InstructionKeys[cacheCount];
+            for (int i = 0; i < cacheCount; i++)
+            {
+                keyArray[i] = cacheArray[i].Key;
+            }
+    
+            var sortedInstructions = instructions
+                .Select((ins, index) => new { Instruction = ins, Index = index })
+                .OrderBy(x => x.Instruction.sequence.Length)
+                .ToArray();
+    
+            foreach (var item in sortedInstructions)
+            {
+                InstructionSets ins = item.Instruction;
+                int originalIndex = item.Index;
+        
+                if (ins.sequence.Length > cacheCount || ins.sequence.Length == 0)
+                    continue;
+        
+                if (FindSequence(keyArray, ins.sequence))
+                {
+                    results[originalIndex] = ins.description;
+                    print(results[0]);
+                }
+            }
+
+            return results;
+        }
+        
+        private bool FindSequence(InstructionKeys[] haystack, InstructionKeys[] needle)
+        {
+            if (needle.Length == 0) return true;
+            if (needle.Length > haystack.Length) return false;
+    
+            int haystackLen = haystack.Length;
+            int needleLen = needle.Length;
+    
+            for (int i = 0; i <= haystackLen - needleLen; i++)
+            {
+                bool match = true;
+                for (int j = 0; j < needleLen; j++)
+                {
+                    if (haystack[i + j] != needle[j])
+                    {
+                        match = false;
+                        break;
+                    }
+                }
+        
+                if (match) return true;
+            }
+    
+            return false;
+        }
+        
         public void OnAttack(InputAction.CallbackContext context)
         {
             if (locked)
             {
                 AddInstructionToCanvas(InstructionKeys.ATTACK);
-                _instructionCache.Enqueue(new TimedInstruction(InstructionKeys.ATTACK));
+                instructionCache.Enqueue(new TimedInstruction(InstructionKeys.ATTACK));
+                OnInstructionCacheRefresh?.Invoke();
             }
         }
    
@@ -149,12 +202,10 @@ namespace Script.Player
         private Coroutine specialSkillCoroutine;
         public void OnSpecialSkill(InputAction.CallbackContext context)
         {
-            if (specialSkillCoroutine != null)
-            {
-                StopCoroutine(specialSkillCoroutine);
-            }
+            if (specialSkillCoroutine != null) StopCoroutine(specialSkillCoroutine);
             specialSkillCoroutine = StartCoroutine(SpecialSkillCoroutine());
         }
+        
         private IEnumerator SpecialSkillCoroutine()
         {
             specialSkill = true;
@@ -164,7 +215,6 @@ namespace Script.Player
                 frame_wait += 1;
                 yield return new WaitForEndOfFrame();
             }
-
             specialSkill = false;
         }
     
@@ -172,15 +222,14 @@ namespace Script.Player
         private Coroutine skillCoroutine;
         public void OnSkill(InputAction.CallbackContext context)
         {
-            if (skillCoroutine != null)
-            {
-                StopCoroutine(skillCoroutine);
-            }
+            if (skillCoroutine != null) StopCoroutine(skillCoroutine);
             skillCoroutine = StartCoroutine(SkillCoroutine());
+            
             if (locked)
             {
                 AddInstructionToCanvas(InstructionKeys.SKILL);
-                _instructionCache.Enqueue(new TimedInstruction(InstructionKeys.SKILL));
+                instructionCache.Enqueue(new TimedInstruction(InstructionKeys.SKILL));
+                OnInstructionCacheRefresh?.Invoke();
             }
         }
 
@@ -196,80 +245,194 @@ namespace Script.Player
             skill = false;        
         }
     
-    
         public void OnMoving(InputAction.CallbackContext context)
         {
             Vector2 newRawInput = context.ReadValue<Vector2>();
         
-            // 如果输入被锁定，暂存输入值
             if (inputLocked)
             {
                 pendingRawInput = newRawInput;
                 return;
             }
         
-            // 正常处理输入
             rawMoveInput = newRawInput;
-            moveInput = newRawInput; // 初始值设为原始输入
+            moveInput = newRawInput;
         }
 
         public void OnMovingCancel(InputAction.CallbackContext context)
         {
-            // 如果当前moveInput值较小，激活输入锁定
-            if (moveInput.magnitude <= inputLockThreshold)
-            {
-                inputLocked = true;
-            }
-        
+            if (moveInput.magnitude <= inputLockThreshold) inputLocked = true;
             rawMoveInput = Vector2.zero;
             pendingRawInput = Vector2.zero;
         }
 
         private void OnJumpPerformed(InputAction.CallbackContext context)
         {
-            OnJumpPressed?.Invoke(); // 触发跳跃按下事件
+            OnJumpPressed?.Invoke();
         }
 
         private void OnJumpCanceled(InputAction.CallbackContext context)
         {
-            OnJumpReleased?.Invoke(); // 触发跳跃释放事件
+            OnJumpReleased?.Invoke();
         }
 
+        [Header("摇杆输入设置")]
+        [SerializeField] private float joystickDeadZone = 0.5f;
+        [SerializeField] private float commandCooldown = 0.2f;
+        private float lastCommandTime = 0f;
+        private bool wasInDeadZone = true;
+        private int? lastDirectionZone = null;
+        
         private void OnCommandPerformed(InputAction.CallbackContext context)
         {
-            if (! locked) return;
+            if (!locked) return;
+
             Vector2 input = context.ReadValue<Vector2>();
             InstructionKeys? instruction = null;
-            if (input.x > 0)
+    
+            if (currentInputDevice == InputDeviceType.Gamepad)
             {
-                instruction = lastDirection > 0? InstructionKeys.RIGHT : InstructionKeys.LEFT;
+                bool isInDeadZone = input.magnitude < joystickDeadZone;
+                int? currentDirectionZone = null;
+        
+                if (!isInDeadZone)
+                {
+                    currentDirectionZone = GetDirectionZone(input);
+                }
+                
+                // 修复1：确保区域变化时重置状态
+                if (wasInDeadZone && !isInDeadZone)
+                {
+                    lastDirectionZone = null;
+                }
+                
+                // 修复2：正确处理区域变化
+                if (currentDirectionZone.HasValue)
+                {
+                    bool directionChanged = lastDirectionZone != currentDirectionZone;
+                    bool cooldownExpired = Time.time - lastCommandTime >= commandCooldown;
+                    
+                    if ((wasInDeadZone && !isInDeadZone) || 
+                        directionChanged || 
+                        (cooldownExpired && !directionChanged))
+                    {
+                        instruction = GetInstructionFromZone(currentDirectionZone.Value);
+                        if (instruction.HasValue)
+                        {
+                            lastDirectionZone = currentDirectionZone;
+                            lastCommandTime = Time.time;
+                        }
+                    }
+                }
+                else
+                {
+                    lastDirectionZone = null;
+                }
+        
+                wasInDeadZone = isInDeadZone;
             }
-            else if (input.x < 0)
+            else
             {
-                instruction = lastDirection > 0? InstructionKeys.LEFT : InstructionKeys.RIGHT;
-            }
-
-            if (input.y < 0)
-            {
-                instruction = InstructionKeys.DOWN;
-            }
-            else if (input.y < 0)
-            {
-                instruction = InstructionKeys.UP;
-            }
-
-            if (instruction.HasValue)
-            {
-                _instructionCache.Enqueue(new TimedInstruction(instruction.Value));
-                AddInstructionToCanvas(instruction.Value);
+                if (input.x != 0 && input.y != 0)
+                {
+                    if (input.y > 0)
+                    {
+                        instruction = input.x > 0 ? InstructionKeys.UPR : InstructionKeys.UPL;
+                    }
+                    else
+                    {
+                        instruction = input.x > 0 ? InstructionKeys.DOWNR : InstructionKeys.DOWNL;
+                    }
+                }
+                else if (input.x != 0)
+                {
+                    instruction = input.x > 0 ? InstructionKeys.RIGHT : InstructionKeys.LEFT;
+                }
+                else if (input.y != 0)
+                {
+                    instruction = input.y > 0 ? InstructionKeys.UP : InstructionKeys.DOWN;
+                }
             }
             
+            if (instruction.HasValue)
+            {
+                instructionCache.Enqueue(new TimedInstruction(instruction.Value));
+                AddInstructionToCanvas(instruction.Value);
+                OnInstructionCacheRefresh?.Invoke();
+            }
+        }
+        
+        private int GetDirectionZone(Vector2 input)
+        {
+            // 修复3：确保处理零向量情况
+            if (input.magnitude < 0.01f) return -1;
+            
+            float angle = Mathf.Atan2(input.y, input.x) * Mathf.Rad2Deg;
+            if (angle < 0) angle += 360;
+    
+            int zone = Mathf.FloorToInt((angle + 22.5f) / 45f) % 8;
+            return zone;
         }
 
+        private InstructionKeys? GetInstructionFromZone(int zone)
+        {
+            switch (zone)
+            {
+                case 0: return InstructionKeys.RIGHT;
+                case 1: return InstructionKeys.UPR;
+                case 2: return InstructionKeys.UP;
+                case 3: return InstructionKeys.UPL;
+                case 4: return InstructionKeys.LEFT;
+                case 5: return InstructionKeys.DOWNL;
+                case 6: return InstructionKeys.DOWN;
+                case 7: return InstructionKeys.DOWNR;
+                default: return null;
+            }
+        }
+        
+        public void ResetCommandState()
+        {
+            lastDirectionZone = null;
+            wasInDeadZone = true;
+        }
 
+        public void OnCommandCancel(InputAction.CallbackContext context)
+        {
+            if (moveInput.magnitude <= inputLockThreshold) inputLocked = true;
+            rawMoveInput = Vector2.zero;
+            pendingRawInput = Vector2.zero;
+            
+            if (currentInputDevice == InputDeviceType.Gamepad) ResetCommandState();
+        }
+        
+        private void CleanExpiredInstructions()
+        {
+            if (instructionCache.Count == 0) return;
+    
+            int currentFrame = Time.frameCount;
+    
+            while (instructionCache.Count > 0)
+            {
+                var instruction = instructionCache.Peek();
+                if (currentFrame - instruction.CreationFrame >= 20)
+                {
+                    instructionCache.Dequeue();
+                }
+                else
+                {
+                    break;
+                }
+            }
+        }
+        
+        private float lastDeviceCheckTime = 0f;
+        private const float DEVICE_CHECK_INTERVAL = 0.1f;
+        
         void DetectInputDevice()
         {
-            // 检测手柄输入
+            if (Time.time - lastDeviceCheckTime < DEVICE_CHECK_INTERVAL) return;
+            lastDeviceCheckTime = Time.time;
+    
             if (Gamepad.current != null && Gamepad.current.wasUpdatedThisFrame)
             {
                 if (IsGamepadActive() && currentInputDevice != InputDeviceType.Gamepad)
@@ -278,7 +441,6 @@ namespace Script.Player
                 }
             }
 
-            // 检测键盘鼠标输入
             if ((Keyboard.current != null && Keyboard.current.anyKey.wasPressedThisFrame) ||
                 (Mouse.current != null && Mouse.current.delta.ReadValue() != Vector2.zero))
             {
@@ -288,22 +450,19 @@ namespace Script.Player
                 }
             }
         }
+        
         public static float FixFloat(float value)
         {
-            // 确保是有效数字
-            if (float.IsNaN(value) || float.IsInfinity(value))
-                return 0f;
-
-            // 四舍五入到4位小数
+            if (float.IsNaN(value) || float.IsInfinity(value)) return 0f;
             return (float)System.Math.Round(value, 4);
         }
+        
         void SetInputDevice(InputDeviceType deviceType)
         {
             if (currentInputDevice != deviceType)
             {
                 currentInputDevice = deviceType;
                 OnInputDeviceChanged?.Invoke(deviceType);
-                Debug.Log($"输入设备切换到: {deviceType}");
             }
         }
 
@@ -323,7 +482,6 @@ namespace Script.Player
             if (canvas != null)
             {
                 GameObject instructionNode = Instantiate(KeyIcon);
-            
                 instructionNode.GetComponent<KeyIcons>().key_text.text = instruction.ToString();
                 canvas.AddInstructionNode(instructionNode);
             }
@@ -337,11 +495,9 @@ namespace Script.Player
                 character_component = _character_comp;
                 return true;
             }
-            else
-            {
-                return false;
-            }
+            return false;
         }
+        
         public class TimedInstruction
         {
             public InstructionKeys Key { get; }
@@ -353,16 +509,15 @@ namespace Script.Player
                 CreationFrame = Time.frameCount;
             }
     
-            public bool IsExpired => Time.frameCount - CreationFrame >= 15;
+            public bool IsExpired => Time.frameCount - CreationFrame >= 20;
         }
     }
-
 
     [Serializable]
     public class InstructionSets
     {
         [Tooltip("指令序列(最多7个)")]
-        public PlayerInputs.InstructionKeys[] sequence = new PlayerInputs.InstructionKeys[0]; // 初始化为空数组
+        public PlayerInputs.InstructionKeys[] sequence = new PlayerInputs.InstructionKeys[0];
 
         [Tooltip("允许的最大输入间隔时间（秒）")]
         [Range(0.1f, 2f)]

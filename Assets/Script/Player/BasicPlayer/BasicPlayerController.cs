@@ -114,14 +114,14 @@ namespace Script.Player.BasicPlayer
                 Vector3 newVelocity = animator.velocity;
                 newVelocity.y = RB.velocity.y;
                 RB.velocity = new Vector3(PlayerInputs.FixFloat(newVelocity.x), PlayerInputs.FixFloat(newVelocity.y), PlayerInputs.FixFloat(newVelocity.z));
+                AdjustAnimationSpeedSafely();
             }
             else
             {
                 Vector3 newvelocity = new Vector3(PlayerInputs.FixFloat(input.x * target_speed), PlayerInputs.FixFloat(RB.velocity.y), PlayerInputs.FixFloat(animator.velocity.z));
                 RB.velocity = newvelocity;
             }
-        
-            AdjustAnimationSpeedSafely();
+            
             if (IsJump && RB.velocity.y < jump_force)
             {
                 RB.velocity += new Vector3(0, 1f, 0);
@@ -132,74 +132,36 @@ namespace Script.Player.BasicPlayer
         {
             // 获取当前动画速度的绝对值
             float absCurrentVelocityX = Mathf.Abs(animator.velocity.x);
-        
+
             // 避免除零错误和无效值
-            if (absCurrentVelocityX < 0.01f || float.IsNaN(absCurrentVelocityX) || float.IsInfinity(absCurrentVelocityX))
+            if (absCurrentVelocityX < 0.01f)
             {
                 animator.speed = 1f;
                 return;
             }
-        
-            float targetSpeed = 0f;
-            float currentVelocityX = animator.velocity.x;
 
-            if (!Locking)
+            // 统一计算输入绝对值：锁定状态考虑方向调整，未锁定直接使用
+            float absInputX = Locking ? Mathf.Abs(input.x * lastDirection) : Mathf.Abs(input.x);
+    
+            // 计算实际目标速度（基于输入强度和target_speed）
+            float actualTargetSpeed = absInputX * target_speed;
+    
+            // 根据输入强度选择动画播放速度档位
+            float animationSpeedTarget = (absInputX <= 0.4f) ? minSpeed : 
+                (absInputX <= 0.6f) ? midSpeed : maxSpeed;
+    
+            // 统一速度调整逻辑
+            if (absInputX > 0.01f && absCurrentVelocityX < actualTargetSpeed)
             {
-                // 未锁定状态：只关心输入大小（绝对值）
-                float absInputX = Mathf.Abs(input.x);
-            
-                // 分段计算目标速度（始终正数）
-                if (absInputX <= 0.4f) targetSpeed = minSpeed;
-                else if (absInputX <= 0.6f) targetSpeed = midSpeed;
-                else targetSpeed = maxSpeed;
-            
-                // 确保目标速度有效
-                if (float.IsNaN(targetSpeed) || float.IsInfinity(targetSpeed))
-                    targetSpeed = minSpeed;
-            
-                // 只有当当前速度不足时才调整
-                if (absCurrentVelocityX < targetSpeed)
-                {
-                    // 计算安全的速度比例
-                    float speedRatio = Mathf.Clamp(targetSpeed / absCurrentVelocityX, 1f, 3f);
-                    animator.speed = Mathf.Clamp(animator.speed * speedRatio, 0.5f, 3f);
-                }
-                else
-                {
-                    animator.speed = 1f;
-                }
+                // 根据实际速度差异调整动画播放速度
+                float speedRatio = Mathf.Clamp(actualTargetSpeed / absCurrentVelocityX, 1f, 10f);
+                float minSpeedLimit = Locking ? 1f : 0.5f;
+                float maxSpeedLimit = Mathf.Max(animationSpeedTarget, actualTargetSpeed / absCurrentVelocityX);
+                animator.speed = Mathf.Clamp(animator.speed * speedRatio, minSpeedLimit, maxSpeedLimit);
             }
             else
             {
-                // 锁定状态：考虑前进/后退
-                float adjustedInput = input.x * lastDirection;
-            
-                if (adjustedInput >= 0)
-                {
-                    // 正向移动（前进）
-                    if (adjustedInput <= 0.4f) targetSpeed = minSpeed;
-                    else if (adjustedInput <= 0.6f) targetSpeed = midSpeed;
-                    else targetSpeed = maxSpeed;
-                }
-                // 确保目标速度有效
-                if (float.IsNaN(targetSpeed) || float.IsInfinity(targetSpeed))
-                    targetSpeed = minSpeed;
-            
-                // 调整动画速度
-                bool shouldAdjust = (adjustedInput >= 0 && currentVelocityX < targetSpeed) ||
-                                    (adjustedInput < 0 && currentVelocityX > targetSpeed);
-            
-                if (shouldAdjust)
-                {
-                    // 计算安全的速度比例
-                    float absTarget = Mathf.Abs(targetSpeed);
-                    float speedRatio = Mathf.Clamp(absTarget / absCurrentVelocityX, 1f, 3f);
-                    animator.speed = Mathf.Clamp(animator.speed * speedRatio, 1f, 3f);
-                }
-                else
-                {
-                    animator.speed = 1f;
-                }
+                animator.speed = 1f;
             }
         }
         // 翻转物体朝向：Z 轴 scale 变 ±1

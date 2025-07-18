@@ -337,16 +337,22 @@ namespace Script.Player
                 {
                     if (input.y > 0)
                     {
-                        instruction = input.x > 0 ? InstructionKeys.UPR : InstructionKeys.UPL;
+                        instruction = input.x > 0
+                            ? (lastDirection > 0 ? InstructionKeys.UPR : InstructionKeys.UPL)
+                            : (lastDirection > 0 ? InstructionKeys.UPL : InstructionKeys.UPR);
                     }
                     else
                     {
-                        instruction = input.x > 0 ? InstructionKeys.DOWNR : InstructionKeys.DOWNL;
+                        instruction = input.x > 0                            
+                            ? (lastDirection > 0 ? InstructionKeys.DOWNR : InstructionKeys.DOWNL)
+                            : (lastDirection > 0 ? InstructionKeys.DOWNL : InstructionKeys.DOWNR);
                     }
                 }
                 else if (input.x != 0)
                 {
-                    instruction = input.x > 0 ? InstructionKeys.RIGHT : InstructionKeys.LEFT;
+                    instruction = input.x > 0                             
+                        ? (lastDirection > 0 ? InstructionKeys.RIGHT : InstructionKeys.LEFT)
+                        : (lastDirection > 0 ? InstructionKeys.LEFT : InstructionKeys.RIGHT);
                 }
                 else if (input.y != 0)
                 {

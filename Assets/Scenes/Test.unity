@@ -4069,7 +4069,7 @@ MonoBehaviour:
   minSpeed: 1.5
   midSpeed: 2
   maxSpeed: 3.5
-  target_speed: 3
+  target_speed: 2
   Locking: 1
   jump_force: 4
   jumpBufferTime: 0.1
